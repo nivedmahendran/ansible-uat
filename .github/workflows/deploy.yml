@@ -21,12 +21,20 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.UAT_SSH_KEY }}" > ~/.ssh/uatserver
           chmod 600 ~/.ssh/uatserver
+          ssh-keyscan -H ${{ secrets.UAT_HOST }} >> ~/.ssh/known_hosts
           cat > inventory.ini <<EOF
           [uat]
-          ${{ secrets.UAT_HOST }} ansible_user=${{ secrets.UAT_USER }} ansible_ssh_private_key_file=~/.ssh/uatserver
+          ${{ secrets.UAT_HOST }} ansible_user=${{ secrets.UAT_USER }} ansible_ssh_private_key_file=~/.ssh/uatserver ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 
           [all:vars]
           ansible_python_interpreter=/usr/bin/python3
+          EOF
+
+      - name: Create ansible.cfg
+        run: |
+          cat > ansible.cfg <<EOF
+          [defaults]
+          host_key_checking = False
           EOF
 
       - name: Decrypt vault
