@@ -12,8 +12,9 @@ jobs:
 
       - name: Install Ansible
         run: |
-          sudo apt update
-          sudo apt install -y ansible rsync
+          pip install ansible --user
+          sudo apt update -qq
+          sudo apt install -y -qq rsync
 
       - name: Create inventory
         run: |
