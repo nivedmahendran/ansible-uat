@@ -1,0 +1,59 @@
+---
+- name: Deploy app stack to UAT server
+  hosts: uat
+  vars:
+    project_dir: /opt/myapp
+
+  tasks:
+    - name: Install rsync on target
+      apt:
+        name: rsync
+        state: present
+
+    - name: Create project directory
+      file:
+        path: "{{ project_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy project files
+      synchronize:
+        src: "{{ playbook_dir }}/"
+        dest: "{{ project_dir }}/"
+        rsync_opts:
+          - "--exclude=.venv"
+          - "--exclude=inventory.ini"
+          - "--exclude=deploy.yml"
+          - "--exclude=group_vars"
+          - "--exclude=.vault_password"
+
+    - name: Generate .env file from vault
+      copy:
+        dest: "{{ project_dir }}/.env"
+        content: |
+          DB_PASS={{ vault_db_pass }}
+          POSTGRES_PASSWORD={{ vault_db_pass }}
+      no_log: yes
+
+    - name: Docker compose pull
+      command:
+        chdir: "{{ project_dir }}"
+        cmd: docker compose pull
+      register: pull_result
+      changed_when: false
+
+    - name: Docker compose up
+      command:
+        chdir: "{{ project_dir }}"
+        cmd: docker compose up -d --build
+      register: up_result
+
+    - name: Show compose status
+      command:
+        chdir: "{{ project_dir }}"
+        cmd: docker compose ps
+      register: ps_result
+
+    - name: Print status
+      debug:
+        var: ps_result.stdout_lines

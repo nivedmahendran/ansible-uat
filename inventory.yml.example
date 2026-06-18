@@ -1,0 +1,10 @@
+all:
+  children:
+    uat:
+      hosts:
+        uat-server:
+          ansible_host: YOUR_SERVER_IP
+          ansible_user: root
+          ansible_ssh_private_key_file: ~/.ssh/uatserver
+  vars:
+    ansible_python_interpreter: /usr/bin/python3

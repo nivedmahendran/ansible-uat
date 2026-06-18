@@ -1,0 +1,3 @@
+project_dir: /opt/myapp
+db_name: visitors
+db_user: visitors
