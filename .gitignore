@@ -2,3 +2,6 @@
 inventory.ini
 .vault_password
 *.retry
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup

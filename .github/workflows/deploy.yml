@@ -1,12 +1,73 @@
-name: Deploy to UAT
+name: CI/CD Pipeline
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  deploy:
+  lint:
+    name: Lint and Validate
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          pip install yamllint ansible-lint --user
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Lint YAML
+        run: yamllint k8s/ deploy.yml docker.yml k3s.yml certmanager.yml argocd.yml
+
+      - name: Lint Ansible
+        run: ansible-lint deploy.yml docker.yml k3s.yml certmanager.yml argocd.yml
+
+      - name: Validate K8s manifests
+        run: |
+          curl -sLO "https://dl.k8s.io/release/v1.32.0/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          kubectl apply -f k8s/ --dry-run=client -o yaml > /dev/null
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan K8s manifests with Trivy
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          scan-type: config
+          scan-ref: k8s/
+          format: table
+          exit-code: 1
+          severity: HIGH,CRITICAL
+
+      - name: Scan Dockerfile with Trivy
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          scan-type: config
+          scan-ref: app/Dockerfile
+          format: table
+          exit-code: 1
+          severity: HIGH,CRITICAL
+
+      - name: Scan Helm chart with Trivy
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          scan-type: config
+          scan-ref: helm-chart/
+          format: table
+          exit-code: 1
+          severity: HIGH,CRITICAL
+
+  deploy:
+    name: Deploy to UAT
+    needs: [lint, security-scan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
@@ -15,6 +76,7 @@ jobs:
           pip install ansible --user
           sudo apt update -qq
           sudo apt install -y -qq rsync
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Create inventory
         run: |
@@ -40,5 +102,5 @@ jobs:
       - name: Decrypt vault
         run: echo "${{ secrets.VAULT_PASSWORD }}" > .vault_password
 
-      - name: Run deploy playbook
+      - name: Deploy with Ansible
         run: ansible-playbook -i inventory.ini deploy.yml --vault-password-file .vault_password
