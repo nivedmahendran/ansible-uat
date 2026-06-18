@@ -27,7 +27,7 @@ def hello():
         conn.close()
     except Exception as e:
         return f"DB error: {e}", 500
-    return f"Hello from UAT! You are visitor #{count}\n"
+    return f"Hello from UAT (auto-deployed via CI/CD)! You are visitor #{count}\n"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
