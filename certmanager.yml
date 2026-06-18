@@ -1,0 +1,62 @@
+---
+- name: Install cert-manager on K3s and set up Let's Encrypt
+  hosts: uat
+  tasks:
+    - name: Create cert-manager namespace
+      shell: k3s kubectl create namespace cert-manager --dry-run=client -o yaml | k3s kubectl apply -f -
+      changed_when: false
+
+    - name: Install cert-manager
+      shell: |
+        k3s kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.3/cert-manager.yaml
+      args:
+        creates: /usr/local/bin/cmctl
+
+    - name: Wait for cert-manager pods
+      shell: k3s kubectl wait --for=condition=Ready pods --all -n cert-manager --timeout=180s
+      changed_when: false
+
+    - name: Create Let's Encrypt staging ClusterIssuer
+      k3s kubectl apply -f - <<'EOF'
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: letsencrypt-staging
+      spec:
+        acme:
+          server: https://acme-staging-v02.api.letsencrypt.org/directory
+          email: admin@example.com
+          privateKeySecretRef:
+            name: letsencrypt-staging
+          solvers:
+            - http01:
+                ingress:
+                  class: traefik
+      EOF
+
+    - name: Create Let's Encrypt prod ClusterIssuer
+      k3s kubectl apply -f - <<'EOF'
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: letsencrypt-prod
+      spec:
+        acme:
+          server: https://acme-v02.api.letsencrypt.org/directory
+          email: admin@example.com
+          privateKeySecretRef:
+            name: letsencrypt-prod
+          solvers:
+            - http01:
+                ingress:
+                  class: traefik
+      EOF
+
+    - name: Show ClusterIssuers
+      shell: k3s kubectl get clusterissuer
+      register: issuers
+      changed_when: false
+
+    - name: Print issuers
+      debug:
+        var: issuers.stdout_lines

@@ -4,11 +4,17 @@ metadata:
   name: app-ingress
   namespace: myapp
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    cert-manager.io/cluster-issuer: myapp-issuer
 spec:
   ingressClassName: traefik
+  tls:
+    - hosts:
+        - 63.250.52.122.nip.io
+      secretName: app-tls
   rules:
-    - http:
+    - host: 63.250.52.122.nip.io
+      http:
         paths:
           - path: /
             pathType: Prefix
