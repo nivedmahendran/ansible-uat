@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "myapp.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{ include "myapp.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "myapp.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "myapp.name" . }}
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 5000
+          env:
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myapp.name" . }}-config
+                  key: DB_HOST
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myapp.name" . }}-config
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "myapp.name" . }}-config
+                  key: DB_USER
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "myapp.name" . }}-secrets
+                  key: DB_PASS
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "myapp.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{ include "myapp.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: {{ include "myapp.name" . }}
+  ports:
+    - port: 5000
