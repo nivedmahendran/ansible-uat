@@ -26,7 +26,7 @@ Production-grade UAT environment — bare metal to Kubernetes, GitOps, monitorin
                                │ SSH
                                ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                      UAT Server (63.250.52.122)              │
+│                         UAT Server                          │
 │  ┌──────────┐   ┌─────────────────────────────────────────┐ │
 │  │  Docker  │   │             K3s Cluster                  │ │
 │  │ Compose  │   │  ┌──────────┐  ┌──────────┐             │ │
@@ -76,12 +76,12 @@ Production-grade UAT environment — bare metal to Kubernetes, GitOps, monitorin
 
 ## Services
 
-| Service | URL | Credentials |
-|---|---|---|
-| App | https://63.250.52.122.nip.io | — |
-| Grafana | https://63.250.52.122.nip.io:3000 | admin / admin |
-| Prometheus | https://63.250.52.122.nip.io:9090 | — |
-| ArgoCD | https://63.250.52.122.nip.io:32050 | admin / VwtBpemCLsRlgK2D |
+| Service | URL |
+|---|---|
+| App | https://__UAT_HOST__ |
+| Grafana | https://__UAT_HOST__:3000 |
+| Prometheus | https://__UAT_HOST__:9090 |
+| ArgoCD | https://__UAT_HOST__:32050 |
 
 ## Project Structure
 

@@ -10,10 +10,10 @@ spec:
   ingressClassName: traefik
   tls:
     - hosts:
-        - 63.250.52.122.nip.io
+        - __UAT_HOST__
       secretName: app-tls
   rules:
-    - host: 63.250.52.122.nip.io
+    - host: __UAT_HOST__
       http:
         paths:
           - path: /

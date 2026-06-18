@@ -28,6 +28,7 @@ jobs:
         run: |
           curl -sLO "https://dl.k8s.io/release/v1.32.0/bin/linux/amd64/kubectl"
           chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          sed -i 's/__UAT_HOST__/validate.local/g' k8s/ingress.yml
           kubectl apply -f k8s/ --dry-run=client -o yaml > /dev/null
 
   security-scan:
@@ -102,5 +103,18 @@ jobs:
       - name: Decrypt vault
         run: echo "${{ secrets.VAULT_PASSWORD }}" > .vault_password
 
+      - name: Substitute host placeholder
+        run: |
+          UAT_HOST="${{ secrets.UAT_HOST }}.nip.io"
+          find k8s/ argocd.yml -type f -exec sed -i "s/__UAT_HOST__/$UAT_HOST/g" {} +
+
       - name: Deploy with Ansible
         run: ansible-playbook -i inventory.ini deploy.yml --vault-password-file .vault_password
+
+      - name: Deploy K8s manifests to K3s
+        run: |
+          rsync -avz -e "ssh -i ~/.ssh/uatserver -o StrictHostKeyChecking=no" \
+            k8s/ ${{ secrets.UAT_USER }}@${{ secrets.UAT_HOST }}:/opt/myapp/k8s/
+          ssh -i ~/.ssh/uatserver -o StrictHostKeyChecking=no \
+            ${{ secrets.UAT_USER }}@${{ secrets.UAT_HOST }} \
+            "k3s kubectl apply -f /opt/myapp/k8s/"

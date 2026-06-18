@@ -29,6 +29,6 @@
     - name: Print ArgoCD info
       debug:
         msg:
-          - "ArgoCD URL: http://63.250.52.122:31867"
+          - "ArgoCD URL: http://__UAT_HOST__:31867"
           - "Admin password: {{ argocd_pass.stdout }}"
           - "Login: admin / {{ argocd_pass.stdout }}"
