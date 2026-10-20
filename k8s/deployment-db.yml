@@ -13,11 +13,25 @@ spec:
       labels:
         app: db
     spec:
+      # Postgres 16's alpine image runs as uid 70 (postgres) and does not need
+      # root. Pinning the uid and dropping capabilities removes the privilege
+      # escalation path a default security context leaves open.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres
           image: postgres:16-alpine
           ports:
             - containerPort: 5432
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: POSTGRES_DB
               valueFrom:
@@ -37,6 +51,13 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            # Postgres writes a unix socket and a lock file outside its data
+            # directory. With a read-only root filesystem these must be given
+            # writable mounts or the server will not start.
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "visitors", "-d", "visitors"]
@@ -46,3 +67,7 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: db-data
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

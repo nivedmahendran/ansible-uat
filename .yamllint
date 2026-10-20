@@ -1,0 +1,48 @@
+---
+# yamllint configuration.
+#
+# The default ruleset is written for prose-like YAML and does not fit Ansible
+# or Kubernetes manifests, which legitimately contain long lines: release URLs,
+# shell pipelines, and toleration/annotation values. The line-length limit is
+# raised rather than removed, and the checks that only enforce cosmetic style
+# are relaxed, so that what remains is signal.
+
+extends: default
+
+rules:
+  # ansible-lint requires these. An unquoted mode such as `0755` is parsed as
+  # decimal 755 by YAML, silently producing the wrong permissions — a real bug
+  # class rather than a style preference, so both forms are rejected.
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true
+  line-length:
+    max: 160
+    level: warning
+    ignore: |
+      docker.yml
+  # Ansible's documented convention is `yes`/`no` rather than YAML's strict
+  # `true`/`false`, and its own docs use both. Allowing the Ansible spellings
+  # avoids flagging correct playbooks.
+  truthy:
+    allowed-values: ["true", "false", "yes", "no"]
+    check-keys: false
+  # Document-start style varies legitimately: multi-document K8s files need
+  # `---` separators, single-document files commonly omit it. Enforcing either
+  # direction is noise about form rather than correctness.
+  document-start: disable
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: false
+  braces:
+    min-spaces-inside: 0
+    max-spaces-inside: 1
+  brackets:
+    min-spaces-inside: 0
+    max-spaces-inside: 0
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+  key-duplicates: enable
+  empty-lines:
+    max: 2

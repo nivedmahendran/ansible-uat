@@ -1,34 +1,67 @@
 ---
 - name: Install ArgoCD on K3s
   hosts: uat
+  vars:
+    argocd_namespace: argocd
+    argocd_manifest_url: https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    argocd_server_port: 31867
+
   tasks:
-    - name: Create argocd namespace
-      shell: k3s kubectl create namespace argocd --dry-run=client -o yaml | k3s kubectl apply -f -
+    - name: Create the argocd namespace
+      ansible.builtin.command:
+        cmd: k3s kubectl create namespace {{ argocd_namespace }} --dry-run=client -o yaml
+      register: argocd_ns_manifest
       changed_when: false
 
+    - name: Apply the argocd namespace
+      ansible.builtin.command:
+        cmd: k3s kubectl apply -f -
+        stdin: "{{ argocd_ns_manifest.stdout }}"
+      register: argocd_ns_apply
+      changed_when: "'created' in argocd_ns_apply.stdout"
+
+    # The upstream manifest is applied minus the ApplicationSet controller,
+    # which this setup does not use. The pipeline needs pipefail so a failed
+    # download is not masked by sed's exit code.
     - name: Install ArgoCD (core only, no applicationset)
-      shell: |
-        curl -sL https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml | \
-          sed '/applicationset/,/^---/d' | k3s kubectl apply -n argocd -f -
-      args:
-        creates: /usr/local/bin/argocd
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -sL {{ argocd_manifest_url }} \
+          | sed '/applicationset/,/^---/d' \
+          | k3s kubectl apply -n {{ argocd_namespace }} -f -
+      register: argocd_install
+      changed_when: "'created' in argocd_install.stdout or 'configured' in argocd_install.stdout"
 
     - name: Wait for ArgoCD pods
-      shell: k3s kubectl wait --for=condition=Ready pods --all -n argocd --timeout=180s
+      ansible.builtin.command:
+        cmd: k3s kubectl wait --for=condition=Ready pods --all -n {{ argocd_namespace }} --timeout=180s
       changed_when: false
 
-    - name: Patch server to LoadBalancer
-      shell: k3s kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"LoadBalancer"}}'
+    - name: Expose the ArgoCD server on a NodePort
+      ansible.builtin.command:
+        cmd: >-
+          k3s kubectl patch svc argocd-server -n {{ argocd_namespace }}
+          -p '{"spec":{"type":"NodePort","ports":[{"name":"http","port":80,"targetPort":8080,"nodePort":{{ argocd_server_port }}}]}}'
       changed_when: false
 
-    - name: Get initial admin password
-      shell: k3s kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
-      register: argocd_pass
+    - name: Read the initial admin password
+      ansible.builtin.command:
+        cmd: >-
+          k3s kubectl -n {{ argocd_namespace }} get secret argocd-initial-admin-secret
+          -o jsonpath={.data.password}
+      register: argocd_pass_b64
       changed_when: false
+      # The value is a credential; keep it out of stdout and logs.
+      no_log: true
+
+    - name: Decode the admin password
+      ansible.builtin.set_fact:
+        argocd_password: "{{ argocd_pass_b64.stdout | b64decode }}"
+      no_log: true
 
     - name: Print ArgoCD info
-      debug:
+      ansible.builtin.debug:
         msg:
-          - "ArgoCD URL: http://__UAT_HOST__:31867"
-          - "Admin password: {{ argocd_pass.stdout }}"
-          - "Login: admin / {{ argocd_pass.stdout }}"
+          - "ArgoCD URL: http://__UAT_HOST__:{{ argocd_server_port }}"
+          - "Login: admin"
+          - "The initial password is held in argocd_password; retrieve it with a no_log task rather than printing it here."

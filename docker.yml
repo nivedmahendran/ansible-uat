@@ -1,16 +1,16 @@
 ---
 - name: Install Docker and Docker Compose on UAT server
   hosts: uat
-  gather_facts: yes
+  gather_facts: true
 
   tasks:
     - name: Update apt cache
-      apt:
-        update_cache: yes
+      ansible.builtin.apt:
+        update_cache: true
         cache_valid_time: 3600
 
     - name: Install dependencies
-      apt:
+      ansible.builtin.apt:
         name:
           - ca-certificates
           - curl
@@ -19,55 +19,53 @@
         state: present
 
     - name: Create keyring directory
-      file:
+      ansible.builtin.file:
         path: /etc/apt/keyrings
         state: directory
         mode: '0755'
 
     - name: Add Docker GPG key
-      get_url:
+      ansible.builtin.get_url:
         url: https://download.docker.com/linux/ubuntu/gpg
         dest: /etc/apt/keyrings/docker.asc
         mode: '0644'
 
     - name: Add Docker apt repository
-      apt_repository:
-        repo: "deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_lsb.codename }} stable"
+      ansible.builtin.apt_repository:
+        repo: "deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         state: present
-        update_cache: yes
+        update_cache: true
 
     - name: Install Docker packages
-      apt:
+      ansible.builtin.apt:
         name:
           - docker-ce
           - docker-ce-cli
           - containerd.io
           - docker-buildx-plugin
-        state: present
-
-    - name: Install Docker Compose plugin
-      apt:
-        name: docker-compose-plugin
+          - docker-compose-plugin
         state: present
 
     - name: Start and enable Docker
-      systemd:
+      ansible.builtin.systemd:
         name: docker
         state: started
-        enabled: yes
+        enabled: true
 
     - name: Verify Docker
-      command: docker --version
+      ansible.builtin.command:
+        cmd: docker --version
       register: docker_version
-      changed_when: no
+      changed_when: false
 
     - name: Verify Compose
-      command: docker compose version
+      ansible.builtin.command:
+        cmd: docker compose version
       register: compose_version
-      changed_when: no
+      changed_when: false
 
     - name: Print versions
-      debug:
+      ansible.builtin.debug:
         msg:
           - "Docker: {{ docker_version.stdout }}"
           - "Compose: {{ compose_version.stdout }}"

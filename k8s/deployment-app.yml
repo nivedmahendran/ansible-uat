@@ -13,12 +13,26 @@ spec:
       labels:
         app: app
     spec:
+      # Applies to every container in the pod unless a container overrides it.
+      # setuid/setgid binaries are dropped so a compromised process cannot gain
+      # privileges, and the runtime refuses to escalate to root.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
           image: myapp:latest
           imagePullPolicy: Never
           ports:
             - containerPort: 5000
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: DB_HOST
               valueFrom:
@@ -40,3 +54,12 @@ spec:
                 secretKeyRef:
                   name: app-secrets
                   key: DB_PASS
+          # readOnlyRootFilesystem blocks writes everywhere in the image,
+          # including /tmp. Anything that genuinely needs scratch space is
+          # given an explicit mount rather than the whole filesystem back.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

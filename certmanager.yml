@@ -1,62 +1,75 @@
 ---
 - name: Install cert-manager on K3s and set up Let's Encrypt
   hosts: uat
+  vars:
+    certmanager_namespace: cert-manager
+    certmanager_version: v1.16.3
+    certmanager_manifest_url: >-
+      https://github.com/cert-manager/cert-manager/releases/download/{{ certmanager_version }}/cert-manager.yaml
+
   tasks:
-    - name: Create cert-manager namespace
-      shell: k3s kubectl create namespace cert-manager --dry-run=client -o yaml | k3s kubectl apply -f -
+    - name: Create the cert-manager namespace
+      ansible.builtin.command:
+        cmd: k3s kubectl create namespace {{ certmanager_namespace }} --dry-run=client -o yaml
+      register: cm_ns_manifest
       changed_when: false
+
+    - name: Apply the cert-manager namespace
+      ansible.builtin.command:
+        cmd: k3s kubectl apply -f -
+        stdin: "{{ cm_ns_manifest.stdout }}"
+      register: cm_ns_apply
+      changed_when: "'created' in cm_ns_apply.stdout"
+
+    - name: Download the cert-manager release manifest
+      ansible.builtin.get_url:
+        url: "{{ certmanager_manifest_url }}"
+        dest: /tmp/cert-manager-{{ certmanager_version }}.yaml
+        mode: '0644'
 
     - name: Install cert-manager
-      shell: |
-        k3s kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.3/cert-manager.yaml
-      args:
-        creates: /usr/local/bin/cmctl
+      ansible.builtin.command:
+        cmd: k3s kubectl apply -f /tmp/cert-manager-{{ certmanager_version }}.yaml
+      register: cm_install
+      changed_when: "'created' in cm_install.stdout or 'configured' in cm_install.stdout"
 
     - name: Wait for cert-manager pods
-      shell: k3s kubectl wait --for=condition=Ready pods --all -n cert-manager --timeout=180s
+      ansible.builtin.command:
+        cmd: k3s kubectl wait --for=condition=Ready pods --all -n {{ certmanager_namespace }} --timeout=180s
       changed_when: false
 
-    - name: Create Let's Encrypt staging ClusterIssuer
-      k3s kubectl apply -f - <<'EOF'
-      apiVersion: cert-manager.io/v1
-      kind: ClusterIssuer
-      metadata:
-        name: letsencrypt-staging
-      spec:
-        acme:
-          server: https://acme-staging-v02.api.letsencrypt.org/directory
-          email: admin@example.com
-          privateKeySecretRef:
-            name: letsencrypt-staging
-          solvers:
-            - http01:
-                ingress:
-                  class: traefik
-      EOF
+    # ClusterIssuer objects are created by piping YAML on stdin. `command` with
+    # `stdin` is used rather than a shell heredoc: no shell parsing is needed,
+    # and the manifest does not have to survive shell quoting.
+    #
+    # The ACME contact address comes from group_vars so no placeholder is
+    # committed; Let's Encrypt rejects registrations with an invalid contact.
+    - name: Create the Let's Encrypt staging ClusterIssuer
+      ansible.builtin.command:
+        cmd: k3s kubectl apply -f -
+        stdin: "{{ lookup('template', 'templates/clusterissuer.yml.j2') }}"
+      vars:
+        issuer_name: letsencrypt-staging
+        acme_server: https://acme-staging-v02.api.letsencrypt.org/directory
+      register: staging_issuer
+      changed_when: "'created' in staging_issuer.stdout or 'configured' in staging_issuer.stdout"
 
-    - name: Create Let's Encrypt prod ClusterIssuer
-      k3s kubectl apply -f - <<'EOF'
-      apiVersion: cert-manager.io/v1
-      kind: ClusterIssuer
-      metadata:
-        name: letsencrypt-prod
-      spec:
-        acme:
-          server: https://acme-v02.api.letsencrypt.org/directory
-          email: admin@example.com
-          privateKeySecretRef:
-            name: letsencrypt-prod
-          solvers:
-            - http01:
-                ingress:
-                  class: traefik
-      EOF
+    - name: Create the Let's Encrypt production ClusterIssuer
+      ansible.builtin.command:
+        cmd: k3s kubectl apply -f -
+        stdin: "{{ lookup('template', 'templates/clusterissuer.yml.j2') }}"
+      vars:
+        issuer_name: letsencrypt-prod
+        acme_server: https://acme-v02.api.letsencrypt.org/directory
+      register: prod_issuer
+      changed_when: "'created' in prod_issuer.stdout or 'configured' in prod_issuer.stdout"
 
-    - name: Show ClusterIssuers
-      shell: k3s kubectl get clusterissuer
+    - name: Get ClusterIssuers
+      ansible.builtin.command:
+        cmd: k3s kubectl get clusterissuer
       register: issuers
       changed_when: false
 
-    - name: Print issuers
-      debug:
+    - name: Print ClusterIssuers
+      ansible.builtin.debug:
         var: issuers.stdout_lines

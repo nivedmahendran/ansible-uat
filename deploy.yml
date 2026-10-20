@@ -2,22 +2,25 @@
 - name: Deploy app stack to UAT server
   hosts: uat
   vars:
+    # Shared with the k8s manifests and docker-compose; set in group_vars/all.
     project_dir: /opt/myapp
 
   tasks:
     - name: Install rsync on target
-      apt:
+      ansible.builtin.apt:
         name: rsync
         state: present
 
     - name: Create project directory
-      file:
+      ansible.builtin.file:
         path: "{{ project_dir }}"
         state: directory
         mode: '0755'
 
+    # ansible.posix.synchronize is used rather than copy: it transfers only
+    # changed files and honours rsync exclusions, which copy cannot do.
     - name: Copy project files
-      synchronize:
+      ansible.posix.synchronize:
         src: "{{ playbook_dir }}/"
         dest: "{{ project_dir }}/"
         rsync_opts:
@@ -28,32 +31,38 @@
           - "--exclude=.vault_password"
 
     - name: Generate .env file from vault
-      copy:
+      ansible.builtin.copy:
         dest: "{{ project_dir }}/.env"
         content: |
           DB_PASS={{ vault_db_pass }}
           POSTGRES_PASSWORD={{ vault_db_pass }}
-      no_log: yes
+        mode: '0600'
+      # Contains the database password; no_log keeps it out of the output.
+      no_log: true
 
     - name: Docker compose pull
-      command:
+      ansible.builtin.command:
         chdir: "{{ project_dir }}"
         cmd: docker compose pull
       register: pull_result
       changed_when: false
 
     - name: Docker compose up
-      command:
+      ansible.builtin.command:
         chdir: "{{ project_dir }}"
         cmd: docker compose up -d --build
       register: up_result
+      # `up -d` reports the same text whether or not anything changed, so the
+      # container list is what actually indicates a change.
+      changed_when: "'Started' in up_result.stderr or 'Created' in up_result.stderr"
 
-    - name: Show compose status
-      command:
+    - name: Docker compose status
+      ansible.builtin.command:
         chdir: "{{ project_dir }}"
         cmd: docker compose ps
       register: ps_result
+      changed_when: false
 
     - name: Print status
-      debug:
+      ansible.builtin.debug:
         var: ps_result.stdout_lines

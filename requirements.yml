@@ -1,0 +1,10 @@
+---
+# Collections required by these playbooks.
+#
+# ansible.posix provides the synchronize module used by deploy.yml. Installing
+# the collection explicitly, rather than relying on ansible-core, is what makes
+# that module resolve; without it the playbook fails with "couldn't resolve
+# module/action 'ansible.posix.synchronize'".
+collections:
+  - name: ansible.posix
+    version: ">=2.0.0"

@@ -1,0 +1,19 @@
+# ClusterIssuer rendered by certmanager.yml.
+#
+# Kept as a template rather than an inline heredoc: the manifest is real YAML
+# that can be linted and diffed, and the ACME contact address comes from
+# group_vars instead of a committed placeholder.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ issuer_name }}
+spec:
+  acme:
+    server: {{ acme_server }}
+    email: {{ acme_email }}
+    privateKeySecretRef:
+      name: {{ issuer_name }}
+    solvers:
+      - http01:
+          ingress:
+            class: traefik
