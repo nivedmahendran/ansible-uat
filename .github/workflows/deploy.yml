@@ -87,19 +87,56 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A job-level `if` cannot read secrets, so the check runs as a step and
+      # every later step is gated on its output.
+      #
+      # The point is that a missing or stale UAT_HOST should mean "there is no
+      # server configured right now", not "the build is broken". Lint and
+      # security results are what this pipeline exists to report; a red deploy
+      # job for an absent dev server trains you to ignore the pipeline.
+      - name: Check whether a UAT server is configured
+        id: preflight
+        env:
+          UAT_HOST: ${{ secrets.UAT_HOST }}
+        run: |
+          if [[ -z "$UAT_HOST" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::UAT_HOST is not set; skipping deploy. Configure the secret to enable it."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "UAT_HOST is set; proceeding."
+          fi
+
       - name: Install Ansible
+        if: steps.preflight.outputs.configured == 'true'
         run: |
           pip install ansible --user
           sudo apt update -qq
           sudo apt install -y -qq rsync
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Create inventory
+      # The server may be deprovisioned while the secret still holds an old
+      # address. A failed keyscan is treated as "no server" rather than a
+      # build failure, for the same reason as above.
+      - name: Verify the server is reachable
+        id: reachable
+        if: steps.preflight.outputs.configured == 'true'
+        env:
+          UAT_HOST: ${{ secrets.UAT_HOST }}
         run: |
           mkdir -p ~/.ssh
+          if ssh-keyscan -H "$UAT_HOST" >> ~/.ssh/known_hosts 2>/dev/null; then
+            echo "reachable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "reachable=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::UAT_HOST is set but not reachable; skipping deploy."
+          fi
+
+      - name: Create inventory
+        if: steps.reachable.outputs.reachable == 'true'
+        run: |
           echo "${{ secrets.UAT_SSH_KEY }}" > ~/.ssh/uatserver
           chmod 600 ~/.ssh/uatserver
-          ssh-keyscan -H ${{ secrets.UAT_HOST }} >> ~/.ssh/known_hosts
           cat > inventory.ini <<EOF
           [uat]
           ${{ secrets.UAT_HOST }} ansible_user=${{ secrets.UAT_USER }} ansible_ssh_private_key_file=~/.ssh/uatserver ansible_ssh_common_args='-o StrictHostKeyChecking=no'
@@ -109,6 +146,7 @@ jobs:
           EOF
 
       - name: Create ansible.cfg
+        if: steps.reachable.outputs.reachable == 'true'
         run: |
           cat > ansible.cfg <<EOF
           [defaults]
@@ -116,20 +154,30 @@ jobs:
           EOF
 
       - name: Decrypt vault
+        if: steps.reachable.outputs.reachable == 'true'
         run: echo "${{ secrets.VAULT_PASSWORD }}" > .vault_password
 
       - name: Substitute host placeholder
+        if: steps.reachable.outputs.reachable == 'true'
         run: |
           UAT_HOST="${{ secrets.UAT_HOST }}.nip.io"
           find k8s/ argocd.yml -type f -exec sed -i "s/__UAT_HOST__/$UAT_HOST/g" {} +
 
       - name: Deploy with Ansible
+        if: steps.reachable.outputs.reachable == 'true'
         run: ansible-playbook -i inventory.ini deploy.yml --vault-password-file .vault_password
 
       - name: Deploy K8s manifests to K3s
+        if: steps.reachable.outputs.reachable == 'true'
         run: |
           rsync -avz -e "ssh -i ~/.ssh/uatserver -o StrictHostKeyChecking=no" \
             k8s/ ${{ secrets.UAT_USER }}@${{ secrets.UAT_HOST }}:/opt/myapp/k8s/
           ssh -i ~/.ssh/uatserver -o StrictHostKeyChecking=no \
             ${{ secrets.UAT_USER }}@${{ secrets.UAT_HOST }} \
             "k3s kubectl apply -f /opt/myapp/k8s/"
+
+      - name: Report skip
+        if: steps.reachable.outputs.reachable != 'true'
+        run: |
+          echo "Deploy skipped: no reachable UAT server configured." >> "$GITHUB_STEP_SUMMARY"
+          echo "Lint and security scanning ran and passed; only the deploy step was skipped." >> "$GITHUB_STEP_SUMMARY"
